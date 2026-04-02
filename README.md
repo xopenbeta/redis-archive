@@ -27,20 +27,55 @@ redis-{版本号}-{操作系统}-{架构}.{扩展名}
 ```
 
 例如：
-- `redis-7.2.4-linux-x86_64.tar.gz`
-- `redis-7.2.4-macos-arm64.tar.gz`
-- `redis-7.2.4-windows-x86_64.zip`
+- `redis-8.6.2-linux-x86_64.tar.gz`
+- `redis-7.4.8-macos-arm64.tar.gz`
+- `redis-6.2.20-windows-x86_64.zip`
 
 ## 自动构建
 
-本项目使用 GitHub Actions 自动构建所有平台的二进制文件。当推送新的 Git tag 时，将自动触发构建流程。
+本项目使用 GitHub Actions 自动构建所有平台的二进制文件。
 
-### 触发新的构建
+### 构建方式
+
+#### 1. 批量构建所有版本（推荐）
+
+在 GitHub Actions 页面手动触发 workflow：
+
+1. 访问项目的 Actions 标签页
+2. 选择 "Build and Release Redis" workflow
+3. 点击 "Run workflow"
+4. 选择是否构建所有版本（默认为是）
+5. 点击 "Run workflow" 启动构建
+
+这将构建 `versions.json` 中定义的所有 Redis 版本。
+
+#### 2. 构建单个版本
+
+推送与 Redis 官方版本号完全一致的 tag：
 
 ```bash
-git tag v202604021643
-git push origin v202604021643
+# 示例：构建 Redis 8.6.2
+git tag 8.6.2
+git push origin 8.6.2
 ```
+
+**注意**: Tag 名称必须与 Redis 官方仓库的 tag 完全一致（如 `7.2.13`、`8.6.2`），不能使用自定义名称。
+
+### 支持的版本
+
+当前配置支持的 Redis 版本列表在 [`versions.json`](versions.json) 文件中定义：
+
+```json
+{
+  "versions": [
+    "8.6.2",
+    "7.4.8",
+    "6.2.20"
+  ]
+}
+```
+
+这些版本对应 Redis 各大版本系列的最新稳定版本。
 
 ## 版本说明
 

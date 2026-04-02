@@ -5,47 +5,100 @@ on:
     tags:
       - 'v*'
       - 'release-*'
+  workflow_dispatch:
+    inputs:
+      build_all:
+        description: '构建所有版本（如选择否则只构建最新版本）'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Prepare Build Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.set-matrix.outputs.versions }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up matrix
+        id: set-matrix
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.build_all }}" = "true" ]; then
+              # 构建所有版本
+              VERSIONS=$(jq -c '.versions' versions.json)
+            else
+              # 只构建第一个版本（最新版本）
+              VERSIONS=$(jq -c '.versions[0:1]' versions.json)
+            fi
+          else
+            # tag 触发时，只构建当前 tag 对应的版本
+            TAG="${{ github.ref_name }}"
+            VERSIONS="[\"${TAG}\"]"
+          fi
+          
+          echo "versions=${VERSIONS}" >> $GITHUB_OUTPUT
+          
+          # 生成完整的 matrix（版本 × 平台）
+          MATRIX=$(jq -n --argjson versions "${VERSIONS}" '{
+            include: [
+              ($versions[] | {
+                version: .,
+                runner: "ubuntu-latest",
+                os: "linux",
+                arch: "x86_64",
+                target: "linux-x86_64"
+              }),
+              ($versions[] | {
+                version: .,
+                runner: "ubuntu-latest",
+                os: "linux",
+                arch: "arm64",
+                target: "linux-arm64"
+              }),
+              ($versions[] | {
+                version: .,
+                runner: "macos-13",
+                os: "macos",
+                arch: "x86_64",
+                target: "macos-x86_64"
+              }),
+              ($versions[] | {
+                version: .,
+                runner: "macos-latest",
+                os: "macos",
+                arch: "arm64",
+                target: "macos-arm64"
+              }),
+              ($versions[] | {
+                version: .,
+                runner: "windows-latest",
+                os: "windows",
+                arch: "x86_64",
+                target: "windows-x86_64"
+              })
+            ]
+          }')
+          
+          echo "matrix=${MATRIX}" >> $GITHUB_OUTPUT
+
   build:
-    name: Build Redis ${{ github.ref_name }} for ${{ matrix.target }}
+    name: Build Redis ${{ matrix.version }} for ${{ matrix.target }}
+    needs: prepare
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # Linux x86_64
-          - runner: ubuntu-latest
-            os: linux
-            arch: x86_64
-            target: linux-x86_64
-            
-          # Linux ARM64
-          - runner: ubuntu-latest
-            os: linux
-            arch: arm64
-            target: linux-arm64
-            
-          # macOS x86_64
-          - runner: macos-13
-            os: macos
-            arch: x86_64
-            target: macos-x86_64
-            
-          # macOS ARM64
-          - runner: macos-latest
-            os: macos
-            arch: arm64
-            target: macos-arm64
-            
-          # Windows x86_64
-          - runner: windows-latest
-            os: windows
-            arch: x86_64
-            target: windows-x86_64
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Checkout repository
@@ -64,7 +117,7 @@ jobs:
       - name: Build Redis (Linux x86_64)
         if: matrix.target == 'linux-x86_64'
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ matrix.version }}"
           wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
           tar xzf "${VERSION}.tar.gz"
           cd "redis-${VERSION}/src"
@@ -75,7 +128,7 @@ jobs:
       - name: Build Redis (Linux ARM64)
         if: matrix.target == 'linux-arm64'
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ matrix.version }}"
           wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
           tar xzf "${VERSION}.tar.gz"
           cd "redis-${VERSION}/src"
@@ -87,7 +140,7 @@ jobs:
       - name: Build Redis (macOS)
         if: matrix.os == 'macos'
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ matrix.version }}"
           wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
           tar xzf "${VERSION}.tar.gz"
           cd "redis-${VERSION}/src"
@@ -106,7 +159,7 @@ jobs:
         if: matrix.os == 'windows'
         shell: powershell
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = "${{ matrix.version }}"
           $arch = "${{ matrix.arch }}"
           
           # 尝试从 tporadowski/redis 下载预编译版本
@@ -146,7 +199,7 @@ jobs:
       - name: Package artifacts (Unix)
         if: matrix.os != 'windows'
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ matrix.version }}"
           TARGET="${{ matrix.target }}"
           
           mkdir -p "redis-${VERSION}-${TARGET}"
@@ -167,7 +220,7 @@ jobs:
         if: matrix.os == 'windows'
         shell: powershell
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = "${{ matrix.version }}"
           $target = "${{ matrix.target }}"
           
           New-Item -ItemType Directory -Path "redis-$version-$target" -Force
@@ -186,7 +239,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: redis-${{ matrix.target }}
+          name: redis-${{ matrix.version }}-${{ matrix.target }}
           path: |
             redis-*.tar.gz
             redis-*.zip
@@ -194,9 +247,9 @@ jobs:
 
   release:
     name: Create Release
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     
     steps:
       - name: Checkout repository
@@ -247,5 +300,100 @@ jobs:
             ### 源码
             
             本构建基于 Redis 官方源码: https://github.com/redis/redis/tree/${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-batch:
+    name: Create Batch Release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        id: prepare-assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
+          ls -lh release/
+          
+          # 生成版本列表
+          VERSIONS='${{ needs.prepare.outputs.versions }}'
+          echo "versions=${VERSIONS}" >> $GITHUB_OUTPUT
+
+      - name: Generate release body
+        id: release-body
+        run: |
+          VERSIONS='${{ steps.prepare-assets.outputs.versions }}'
+          DATE=$(date +%Y%m%d)
+          
+          # 生成 release 描述
+          cat > release-body.md << 'EOF'
+          ## Redis 多版本预编译二进制文件包
+          
+          构建日期: $(date +%Y-%m-%d)
+          
+          本 Release 包含以下 Redis 版本的预编译二进制文件：
+          EOF
+          
+          # 添加版本列表
+          echo "$VERSIONS" | jq -r '.[]' | while read version; do
+            echo "- **Redis ${version}**" >> release-body.md
+          done
+          
+          cat >> release-body.md << 'EOF'
+          
+          ### 支持的平台
+          
+          - **Linux** (x86_64, arm64)
+          - **macOS** (x86_64 Intel, arm64 Apple Silicon)
+          - **Windows** (x86_64)
+          
+          ### 包含的工具
+          
+          - `redis-server` - Redis 服务器
+          - `redis-cli` - Redis 命令行客户端
+          - `redis-benchmark` - Redis 性能测试工具
+          
+          ### 下载说明
+          
+          文件命名格式: `redis-{版本号}-{平台}-{架构}.{扩展名}`
+          
+          示例:
+          - `redis-8.6.2-linux-x86_64.tar.gz` - Linux x86_64 版本
+          - `redis-7.4.8-macos-arm64.tar.gz` - macOS Apple Silicon 版本
+          - `redis-6.2.20-windows-x86_64.zip` - Windows 版本
+          
+          请根据你的操作系统和架构选择对应的压缩包：
+          
+          - **Linux/macOS**: 推荐下载 `.tar.gz` 文件
+          - **Windows**: 下载 `.zip` 文件
+          
+          解压后即可直接使用，无需编译。
+          
+          ### 源码
+          
+          所有构建均基于 Redis 官方源码: https://github.com/redis/redis
+          EOF
+          
+          echo "RELEASE_TAG=redis-batch-${DATE}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release-body.outputs.RELEASE_TAG }}
+          name: Redis 多版本构建 - ${{ steps.release-body.outputs.RELEASE_TAG }}
+          files: release/*
+          draft: false
+          prerelease: false
+          body_path: release-body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
