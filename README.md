@@ -55,12 +55,8 @@ redis-{版本号}-{操作系统}-{架构}.{扩展名}
 
 ```bash
 # 示例：使用时间戳格式的 tag
-git tag v202604021755
-git push origin v202604021755
-
-# 或使用任意自定义格式
-git tag release-20260402
-git push origin release-20260402
+git tag v202604021811
+git push origin v202604021811
 ```
 
 推送 tag 后，将自动构建 `versions.json` 中定义的所有 Redis 版本。
