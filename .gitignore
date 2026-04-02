@@ -1,0 +1,21 @@
+# Build artifacts
+builds/
+redis-*/
+*.tar.gz
+*.zip
+
+# Downloaded Redis source
+redis-[0-9]*.tar.gz
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# System
+Thumbs.db

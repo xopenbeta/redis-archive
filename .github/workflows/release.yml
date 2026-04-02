@@ -1,0 +1,251 @@
+name: Build and Release Redis
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Redis ${{ github.ref_name }} for ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+            target: linux-x86_64
+            
+          # Linux ARM64
+          - runner: ubuntu-latest
+            os: linux
+            arch: arm64
+            target: linux-arm64
+            
+          # macOS x86_64
+          - runner: macos-13
+            os: macos
+            arch: x86_64
+            target: macos-x86_64
+            
+          # macOS ARM64
+          - runner: macos-latest
+            os: macos
+            arch: arm64
+            target: macos-arm64
+            
+          # Windows x86_64
+          - runner: windows-latest
+            os: windows
+            arch: x86_64
+            target: windows-x86_64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ==================== Linux 构建 ====================
+      - name: Setup build tools (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          fi
+
+      - name: Build Redis (Linux x86_64)
+        if: matrix.target == 'linux-x86_64'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
+          tar xzf "${VERSION}.tar.gz"
+          cd "redis-${VERSION}/src"
+          make -j$(nproc)
+          mkdir -p "${{ github.workspace }}/builds"
+          cp redis-server redis-cli redis-benchmark "${{ github.workspace }}/builds/"
+
+      - name: Build Redis (Linux ARM64)
+        if: matrix.target == 'linux-arm64'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
+          tar xzf "${VERSION}.tar.gz"
+          cd "redis-${VERSION}/src"
+          make CC=aarch64-linux-gnu-gcc -j$(nproc)
+          mkdir -p "${{ github.workspace }}/builds"
+          cp redis-server redis-cli redis-benchmark "${{ github.workspace }}/builds/"
+
+      # ==================== macOS 构建 ====================
+      - name: Build Redis (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
+          tar xzf "${VERSION}.tar.gz"
+          cd "redis-${VERSION}/src"
+          
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            make CFLAGS="-arch arm64" LDFLAGS="-arch arm64" -j$(sysctl -n hw.ncpu)
+          else
+            make CFLAGS="-arch x86_64" LDFLAGS="-arch x86_64" -j$(sysctl -n hw.ncpu)
+          fi
+          
+          mkdir -p "${{ github.workspace }}/builds"
+          cp redis-server redis-cli redis-benchmark "${{ github.workspace }}/builds/"
+
+      # ==================== Windows 构建 ====================
+      - name: Build Redis (Windows)
+        if: matrix.os == 'windows'
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}"
+          $arch = "${{ matrix.arch }}"
+          
+          # 尝试从 tporadowski/redis 下载预编译版本
+          $url = "https://github.com/tporadowski/redis/releases/download/v${version}/Redis-x64-${version}.zip"
+          
+          try {
+            Write-Host "尝试下载: $url"
+            Invoke-WebRequest -Uri $url -OutFile redis.zip -ErrorAction Stop
+            Expand-Archive -Path redis.zip -DestinationPath redis-extracted
+            
+            New-Item -ItemType Directory -Path "${{ github.workspace }}/builds" -Force
+            
+            # 查找并复制二进制文件
+            $files = @("redis-server.exe", "redis-cli.exe", "redis-benchmark.exe")
+            foreach ($file in $files) {
+              $found = Get-ChildItem -Path redis-extracted -Recurse -Filter $file -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) {
+                Copy-Item $found.FullName "${{ github.workspace }}/builds/"
+                Write-Host "已复制: $file"
+              } else {
+                Write-Host "警告: 未找到 $file"
+              }
+            }
+          } catch {
+            Write-Host "下载失败: $_"
+            Write-Host "尝试从 Redis 源码编译..."
+            
+            # 下载 Redis 源码并尝试使用 WSL 编译
+            Invoke-WebRequest -Uri "https://github.com/redis/redis/archive/refs/tags/${version}.tar.gz" -OutFile redis.tar.gz
+            
+            # 这里需要 WSL 或其他编译方案
+            # 由于 Windows 编译复杂，这里标记为失败
+            throw "Windows 平台自动编译暂不支持，请使用预编译版本"
+          }
+
+      # ==================== 打包 ====================
+      - name: Package artifacts (Unix)
+        if: matrix.os != 'windows'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          TARGET="${{ matrix.target }}"
+          
+          mkdir -p "redis-${VERSION}-${TARGET}"
+          cp "${{ github.workspace }}/builds/"* "redis-${VERSION}-${TARGET}/"
+          
+          # 添加 LICENSE 和 README
+          if [ -f LICENSE ]; then cp LICENSE "redis-${VERSION}-${TARGET}/"; fi
+          if [ -f README.md ]; then cp README.md "redis-${VERSION}-${TARGET}/"; fi
+          
+          # 创建 tar.gz 和 zip 两种格式
+          tar czf "redis-${VERSION}-${TARGET}.tar.gz" "redis-${VERSION}-${TARGET}/"
+          zip -r "redis-${VERSION}-${TARGET}.zip" "redis-${VERSION}-${TARGET}/"
+          
+          echo "ARTIFACT_TAR=redis-${VERSION}-${TARGET}.tar.gz" >> $GITHUB_ENV
+          echo "ARTIFACT_ZIP=redis-${VERSION}-${TARGET}.zip" >> $GITHUB_ENV
+
+      - name: Package artifacts (Windows)
+        if: matrix.os == 'windows'
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}"
+          $target = "${{ matrix.target }}"
+          
+          New-Item -ItemType Directory -Path "redis-$version-$target" -Force
+          Copy-Item "${{ github.workspace }}/builds/*" "redis-$version-$target/" -Recurse -ErrorAction SilentlyContinue
+          
+          # 添加 LICENSE 和 README
+          if (Test-Path LICENSE) { Copy-Item LICENSE "redis-$version-$target/" }
+          if (Test-Path README.md) { Copy-Item README.md "redis-$version-$target/" }
+          
+          # 创建 zip 格式
+          Compress-Archive -Path "redis-$version-$target" -DestinationPath "redis-$version-$target.zip"
+          
+          "ARTIFACT_ZIP=redis-$version-$target.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # ==================== 上传构件 ====================
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-${{ matrix.target }}
+          path: |
+            redis-*.tar.gz
+            redis-*.zip
+          retention-days: 5
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
+          ls -lh release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+          body: |
+            ## Redis ${{ github.ref_name }} 预编译二进制文件
+            
+            本 Release 包含以下平台的预编译 Redis 二进制文件：
+            
+            - **Linux** (x86_64, arm64)
+            - **macOS** (x86_64, arm64)
+            - **Windows** (x86_64)
+            
+            ### 包含的工具
+            
+            - `redis-server` - Redis 服务器
+            - `redis-cli` - Redis 命令行客户端
+            - `redis-benchmark` - Redis 性能测试工具
+            
+            ### 下载说明
+            
+            请根据你的操作系统和架构选择对应的压缩包：
+            
+            - Linux/macOS: 下载 `.tar.gz` 或 `.zip` 文件
+            - Windows: 下载 `.zip` 文件
+            
+            解压后即可直接使用，无需编译。
+            
+            ### 源码
+            
+            本构建基于 Redis 官方源码: https://github.com/redis/redis/tree/${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
