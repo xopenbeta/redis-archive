@@ -149,20 +149,10 @@ jobs:
           { printf '#ifndef _GNU_SOURCE\n#define _GNU_SOURCE\n#endif\n#include <dlfcn.h>\n'; cat src/debug.c; } > src/debug.c.tmp
           mv src/debug.c.tmp src/debug.c
 
-          # Fix: pre-configure jemalloc for ARM64 cross-compilation.
-          # Without --host, autoconf compiles test programs and tries to execute them,
-          # which fails on x86_64 when the target binary is arm64.
-          JEMALLOC_VER=$(tr -d '\n' < deps/jemalloc/VERSION 2>/dev/null || echo "5.3.0-0-g0")
-          cd deps/jemalloc
-          ./configure \
-            --host=aarch64-linux-gnu \
-            --disable-cxx \
-            --with-version="${JEMALLOC_VER}" \
-            --with-lg-quantum=3 \
-            --disable-cache-oblivious \
-            --with-jemalloc-prefix=je_ \
-            CFLAGS="" LDFLAGS=""
-          cd ../..
+          # Fix: patch deps/Makefile to pass --host to jemalloc configure for ARM64 cross-compilation.
+          # The deps/Makefile first runs `make distclean` on jemalloc (erasing any pre-configure),
+          # then re-runs ./configure – patching the command directly is the only reliable approach.
+          sed -i 's|./configure --disable-cxx|./configure --host=aarch64-linux-gnu --disable-cxx|' deps/Makefile
 
           cd src
           make CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ -j$(nproc)
