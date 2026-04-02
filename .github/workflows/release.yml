@@ -49,7 +49,8 @@ jobs:
           echo "versions=${VERSIONS}" >> $GITHUB_OUTPUT
           
           # 生成完整的 matrix（版本 × 平台）
-          MATRIX=$(jq -n --argjson versions "${VERSIONS}" '{
+          # 使用 -c 参数将 JSON 压缩成一行，避免多行输出问题
+          MATRIX=$(jq -n -c --argjson versions "${VERSIONS}" '{
             include: [
               ($versions[] | {
                 version: .,
