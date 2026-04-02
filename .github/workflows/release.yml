@@ -155,45 +155,52 @@ jobs:
           cp redis-server redis-cli redis-benchmark "${{ github.workspace }}/builds/"
 
       # ==================== Windows 构建 ====================
+      # tporadowski/redis 仅维护到 v5.x，6.x/7.x/8.x 需从源码编译
+      # 使用 MSYS2（MSYS 子系统）提供 POSIX 层，直接编译 Redis 源码
+      - name: Setup MSYS2 (Windows)
+        if: matrix.os == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: false
+          install: >-
+            gcc
+            make
+            base-devel
+
       - name: Build Redis (Windows)
         if: matrix.os == 'windows'
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $version = "${{ matrix.version }}"
-          $arch = "${{ matrix.arch }}"
-          
-          # 尝试从 tporadowski/redis 下载预编译版本
-          $url = "https://github.com/tporadowski/redis/releases/download/v${version}/Redis-x64-${version}.zip"
-          
-          try {
-            Write-Host "尝试下载: $url"
-            Invoke-WebRequest -Uri $url -OutFile redis.zip -ErrorAction Stop
-            Expand-Archive -Path redis.zip -DestinationPath redis-extracted
-            
-            New-Item -ItemType Directory -Path "${{ github.workspace }}/builds" -Force
-            
-            # 查找并复制二进制文件
-            $files = @("redis-server.exe", "redis-cli.exe", "redis-benchmark.exe")
-            foreach ($file in $files) {
-              $found = Get-ChildItem -Path redis-extracted -Recurse -Filter $file -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($found) {
-                Copy-Item $found.FullName "${{ github.workspace }}/builds/"
-                Write-Host "已复制: $file"
-              } else {
-                Write-Host "警告: 未找到 $file"
-              }
-            }
-          } catch {
-            Write-Host "下载失败: $_"
-            Write-Host "尝试从 Redis 源码编译..."
-            
-            # 下载 Redis 源码并尝试使用 WSL 编译
-            Invoke-WebRequest -Uri "https://github.com/redis/redis/archive/refs/tags/${version}.tar.gz" -OutFile redis.tar.gz
-            
-            # 这里需要 WSL 或其他编译方案
-            # 由于 Windows 编译复杂，这里标记为失败
-            throw "Windows 平台自动编译暂不支持，请使用预编译版本"
-          }
+          set -e
+          VERSION="${{ matrix.version }}"
+          BUILDS_DIR="$(cygpath -u '${{ github.workspace }}')/builds"
+
+          echo "下载 Redis ${VERSION} 源码..."
+          curl -fL "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz" -o redis.tar.gz
+          tar xzf redis.tar.gz
+          cd "redis-${VERSION}/src"
+
+          echo "使用 MSYS2 编译 Redis（MALLOC=libc 避免 jemalloc 兼容问题）..."
+          make MALLOC=libc -j$(nproc)
+
+          mkdir -p "$BUILDS_DIR"
+
+          # 复制可执行文件
+          for f in redis-server redis-cli redis-benchmark; do
+            if [ -f "${f}.exe" ]; then
+              cp "${f}.exe" "$BUILDS_DIR/"
+              echo "已复制: ${f}.exe"
+            fi
+          done
+
+          # 复制 MSYS2 运行时 DLL，确保可独立分发
+          for dll in msys-2.0.dll msys-iconv-2.dll msys-intl-8.dll; do
+            src="/usr/bin/$dll"
+            [ -f "$src" ] && cp "$src" "$BUILDS_DIR/" && echo "已复制运行时: $dll"
+          done
+
+          ls -la "$BUILDS_DIR"
 
       # ==================== 打包 ====================
       - name: Package artifacts (Unix)
