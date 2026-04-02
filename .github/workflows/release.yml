@@ -149,8 +149,23 @@ jobs:
           { printf '#ifndef _GNU_SOURCE\n#define _GNU_SOURCE\n#endif\n#include <dlfcn.h>\n'; cat src/debug.c; } > src/debug.c.tmp
           mv src/debug.c.tmp src/debug.c
 
+          # Fix: pre-configure jemalloc for ARM64 cross-compilation.
+          # Without --host, autoconf compiles test programs and tries to execute them,
+          # which fails on x86_64 when the target binary is arm64.
+          JEMALLOC_VER=$(tr -d '\n' < deps/jemalloc/VERSION 2>/dev/null || echo "5.3.0-0-g0")
+          cd deps/jemalloc
+          ./configure \
+            --host=aarch64-linux-gnu \
+            --disable-cxx \
+            --with-version="${JEMALLOC_VER}" \
+            --with-lg-quantum=3 \
+            --disable-cache-oblivious \
+            --with-jemalloc-prefix=je_ \
+            CFLAGS="" LDFLAGS=""
+          cd ../..
+
           cd src
-          make CC=aarch64-linux-gnu-gcc -j$(nproc)
+          make CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ -j$(nproc)
           mkdir -p "${{ github.workspace }}/builds"
           cp redis-server redis-cli redis-benchmark "${{ github.workspace }}/builds/"
 
