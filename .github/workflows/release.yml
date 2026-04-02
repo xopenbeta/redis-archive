@@ -157,7 +157,7 @@ jobs:
       # ==================== Windows 构建 ====================
       - name: Build Redis (Windows)
         if: matrix.os == 'windows'
-        shell: powershell
+        shell: pwsh
         run: |
           $version = "${{ matrix.version }}"
           $arch = "${{ matrix.arch }}"
@@ -218,7 +218,7 @@ jobs:
 
       - name: Package artifacts (Windows)
         if: matrix.os == 'windows'
-        shell: powershell
+        shell: pwsh
         run: |
           $version = "${{ matrix.version }}"
           $target = "${{ matrix.target }}"
