@@ -120,7 +120,16 @@ jobs:
           VERSION="${{ matrix.version }}"
           wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
           tar xzf "${VERSION}.tar.gz"
-          cd "redis-${VERSION}/src"
+          cd "redis-${VERSION}"
+
+          # Fix: hiredis sds.c isprint char-subscripts error with -Werror on GCC 13+
+          sed -i 's/isprint(\*p)/isprint((unsigned char)*p)/g' deps/hiredis/sds.c
+
+          # Fix: debug.c Dl_info/dladdr needs _GNU_SOURCE + dlfcn.h
+          { printf '#ifndef _GNU_SOURCE\n#define _GNU_SOURCE\n#endif\n#include <dlfcn.h>\n'; cat src/debug.c; } > src/debug.c.tmp
+          mv src/debug.c.tmp src/debug.c
+
+          cd src
           make -j$(nproc)
           mkdir -p "${{ github.workspace }}/builds"
           cp redis-server redis-cli redis-benchmark "${{ github.workspace }}/builds/"
@@ -131,7 +140,16 @@ jobs:
           VERSION="${{ matrix.version }}"
           wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
           tar xzf "${VERSION}.tar.gz"
-          cd "redis-${VERSION}/src"
+          cd "redis-${VERSION}"
+
+          # Fix: hiredis sds.c isprint char-subscripts error with -Werror on GCC 13+
+          sed -i 's/isprint(\*p)/isprint((unsigned char)*p)/g' deps/hiredis/sds.c
+
+          # Fix: debug.c Dl_info/dladdr needs _GNU_SOURCE + dlfcn.h
+          { printf '#ifndef _GNU_SOURCE\n#define _GNU_SOURCE\n#endif\n#include <dlfcn.h>\n'; cat src/debug.c; } > src/debug.c.tmp
+          mv src/debug.c.tmp src/debug.c
+
+          cd src
           make CC=aarch64-linux-gnu-gcc -j$(nproc)
           mkdir -p "${{ github.workspace }}/builds"
           cp redis-server redis-cli redis-benchmark "${{ github.workspace }}/builds/"
@@ -143,8 +161,16 @@ jobs:
           VERSION="${{ matrix.version }}"
           wget "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz"
           tar xzf "${VERSION}.tar.gz"
-          cd "redis-${VERSION}/src"
-          
+          cd "redis-${VERSION}"
+
+          # Fix: hiredis sds.c isprint char-subscripts error with -Werror
+          sed -i '' 's/isprint(\*p)/isprint((unsigned char)*p)/g' deps/hiredis/sds.c
+
+          # Fix: debug.c ensure dlfcn.h is included for Dl_info/dladdr
+          { printf '#include <dlfcn.h>\n'; cat src/debug.c; } > src/debug.c.tmp
+          mv src/debug.c.tmp src/debug.c
+
+          cd src
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             make CFLAGS="-arch arm64" LDFLAGS="-arch arm64" -j$(sysctl -n hw.ncpu)
           else
@@ -179,12 +205,17 @@ jobs:
           echo "下载 Redis ${VERSION} 源码..."
           curl -fL "https://github.com/redis/redis/archive/refs/tags/${VERSION}.tar.gz" -o redis.tar.gz
           tar xzf redis.tar.gz
-          cd "redis-${VERSION}/src"
+          cd "redis-${VERSION}"
+
+          # Fix: hiredis sds.c isprint char-subscripts error with -Werror
+          sed -i 's/isprint(\*p)/isprint((unsigned char)*p)/g' deps/hiredis/sds.c
 
           echo "修复 MSYS2 环境下 debug.c 缺少 dlfcn.h 的问题（Dl_info/dladdr）..."
-          if ! grep -q '^#include <dlfcn.h>$' debug.c; then
-            sed -i '1s/^/#include <dlfcn.h>\n/' debug.c
+          if ! grep -q '^#include <dlfcn.h>$' src/debug.c; then
+            sed -i '1s/^/#include <dlfcn.h>\n/' src/debug.c
           fi
+
+          cd src
 
           echo "使用 MSYS2 编译 Redis（MALLOC=libc 避免 jemalloc 兼容问题）..."
           make MALLOC=libc -j$(nproc)
