@@ -182,7 +182,9 @@ jobs:
           cd "redis-${VERSION}/src"
 
           echo "修复 MSYS2 环境下 debug.c 缺少 dlfcn.h 的问题（Dl_info/dladdr）..."
-          sed -i '1s/^/#include <dlfcn.h>\n/' "redis-${VERSION}/src/debug.c"
+          if ! grep -q '^#include <dlfcn.h>$' debug.c; then
+            sed -i '1s/^/#include <dlfcn.h>\n/' debug.c
+          fi
 
           echo "使用 MSYS2 编译 Redis（MALLOC=libc 避免 jemalloc 兼容问题）..."
           make MALLOC=libc -j$(nproc)
