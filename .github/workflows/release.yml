@@ -152,7 +152,10 @@ jobs:
           # Fix: patch deps/Makefile to pass --host to jemalloc configure for ARM64 cross-compilation.
           # The deps/Makefile first runs `make distclean` on jemalloc (erasing any pre-configure),
           # then re-runs ./configure – patching the command directly is the only reliable approach.
+          # Redis 7.x/8.x: jemalloc configure uses --disable-cxx
           sed -i 's|./configure --disable-cxx|./configure --host=aarch64-linux-gnu --disable-cxx|' deps/Makefile
+          # Redis 6.x: jemalloc configure uses --with-version (no --disable-cxx)
+          sed -i 's|./configure --with-version|./configure --host=aarch64-linux-gnu --with-version|' deps/Makefile
 
           cd src
           make CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ -j$(nproc) redis-server redis-cli redis-benchmark
