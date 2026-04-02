@@ -39,7 +39,7 @@ redis-{版本号}-{操作系统}-{架构}.{扩展名}
 
 ```bash
 git tag v202604021643
-git push origin v202602121454
+git push origin v202604021643
 ```
 
 ## 版本说明
