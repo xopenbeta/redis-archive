@@ -217,7 +217,7 @@ jobs:
           cd src
 
           echo "使用 MSYS2 编译 Redis（MALLOC=libc 避免 jemalloc 兼容问题）..."
-          make MALLOC=libc -j$(nproc)
+          make MALLOC=libc -j$(nproc) redis-server redis-cli redis-benchmark
 
           mkdir -p "$BUILDS_DIR"
 
