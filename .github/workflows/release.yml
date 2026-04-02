@@ -42,9 +42,8 @@ jobs:
               VERSIONS=$(jq -c '.versions[0:1]' versions.json)
             fi
           else
-            # tag 触发时，只构建当前 tag 对应的版本
-            TAG="${{ github.ref_name }}"
-            VERSIONS="[\"${TAG}\"]"
+            # tag 触发时，构建所有版本
+            VERSIONS=$(jq -c '.versions' versions.json)
           fi
           
           echo "versions=${VERSIONS}" >> $GITHUB_OUTPUT

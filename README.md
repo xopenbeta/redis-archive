@@ -39,6 +39,8 @@ redis-{版本号}-{操作系统}-{架构}.{扩展名}
 
 #### 1. 批量构建所有版本（推荐）
 
+**方式一：手动触发**
+
 在 GitHub Actions 页面手动触发 workflow：
 
 1. 访问项目的 Actions 标签页
@@ -47,19 +49,21 @@ redis-{版本号}-{操作系统}-{架构}.{扩展名}
 4. 选择是否构建所有版本（默认为是）
 5. 点击 "Run workflow" 启动构建
 
-这将构建 `versions.json` 中定义的所有 Redis 版本。
+**方式二：推送 Tag**
 
-#### 2. 构建单个版本
-
-推送与 Redis 官方版本号完全一致的 tag：
+推送任意格式的 tag 即可触发批量构建所有版本：
 
 ```bash
-# 示例：构建 Redis 8.6.2
-git tag 8.6.2
-git push origin 8.6.2
+# 示例：使用时间戳格式的 tag
+git tag v202604021739
+git push origin v202604021739
+
+# 或使用任意自定义格式
+git tag release-20260402
+git push origin release-20260402
 ```
 
-**注意**: Tag 名称必须与 Redis 官方仓库的 tag 完全一致（如 `7.2.13`、`8.6.2`），不能使用自定义名称。
+推送 tag 后，将自动构建 `versions.json` 中定义的所有 Redis 版本。
 
 ### 支持的版本
 
