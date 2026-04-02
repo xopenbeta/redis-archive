@@ -68,7 +68,7 @@ jobs:
               }),
               ($versions[] | {
                 version: .,
-                runner: "macos-13",
+                runner: "macos-latest",
                 os: "macos",
                 arch: "x86_64",
                 target: "macos-x86_64"
