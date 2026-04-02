@@ -210,10 +210,9 @@ jobs:
           # Fix: hiredis sds.c isprint char-subscripts error with -Werror
           sed -i 's/isprint(\*p)/isprint((unsigned char)*p)/g' deps/hiredis/sds.c
 
-          echo "修复 MSYS2 环境下 debug.c 缺少 dlfcn.h 的问题（Dl_info/dladdr）..."
-          if ! grep -q '^#include <dlfcn.h>$' src/debug.c; then
-            sed -i '1s/^/#include <dlfcn.h>\n/' src/debug.c
-          fi
+          # Fix: debug.c Dl_info/dladdr needs _GNU_SOURCE + dlfcn.h (same as Linux build)
+          { printf '#define _GNU_SOURCE\n#include <dlfcn.h>\n'; cat src/debug.c; } > src/debug.c.tmp
+          mv src/debug.c.tmp src/debug.c
 
           cd src
 
