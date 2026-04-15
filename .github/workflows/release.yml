@@ -242,8 +242,12 @@ jobs:
           for bin in redis-server.exe redis-cli.exe redis-benchmark.exe; do
             if [ -f "$BUILDS_DIR/$bin" ]; then
               ldd "$BUILDS_DIR/$bin" | grep '/usr/bin/' | awk '{print $3}' | while read dll_path; do
-                [ -f "$dll_path" ] && cp -n "$dll_path" "$BUILDS_DIR/" && echo "已复制运行时: $(basename $dll_path)"
-              done
+                dest="$BUILDS_DIR/$(basename "$dll_path")"
+                if [ -f "$dll_path" ] && [ ! -f "$dest" ]; then
+                  cp "$dll_path" "$BUILDS_DIR/"
+                  echo "已复制运行时: $(basename "$dll_path")"
+                fi
+              done || true
             fi
           done
 
