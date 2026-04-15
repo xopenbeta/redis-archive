@@ -237,10 +237,14 @@ jobs:
             fi
           done
 
-          # 复制 MSYS2 运行时 DLL，确保可独立分发
-          for dll in msys-2.0.dll msys-iconv-2.dll msys-intl-8.dll; do
-            src="/usr/bin/$dll"
-            [ -f "$src" ] && cp "$src" "$BUILDS_DIR/" && echo "已复制运行时: $dll"
+          # 自动检测并复制所有 MSYS2 运行时 DLL，确保可独立分发
+          # 使用 ldd 枚举每个可执行文件的依赖，避免手工维护静态列表导致遗漏
+          for bin in redis-server.exe redis-cli.exe redis-benchmark.exe; do
+            if [ -f "$BUILDS_DIR/$bin" ]; then
+              ldd "$BUILDS_DIR/$bin" | grep '/usr/bin/' | awk '{print $3}' | while read dll_path; do
+                [ -f "$dll_path" ] && cp -n "$dll_path" "$BUILDS_DIR/" && echo "已复制运行时: $(basename $dll_path)"
+              done
+            fi
           done
 
           ls -la "$BUILDS_DIR"
